@@ -1,4 +1,12 @@
 #!/bin/bash
+echo "{
+    \"http-basic\": {
+       \"repo.magento.com\": {
+            \"username\": \"f3dccb5e7a1b5e22a606c19f9c1eb641\",
+            \"password\": \"fa677347b5a6a448494ade10a8649b19\"
+        }
+    }
+}" > /tmp/auth.json
 dnf update -y
 wget https://software.virtualmin.com/gpl/scripts/virtualmin-install.sh
 sh virtualmin-install.sh --bundle LEMP
@@ -42,9 +50,10 @@ ALSO POINT YOUR A RECORD FOR THE DOMAIN
 <===================================================================================================================================>"
 
 sleep 5
-virtualmin create-domain --domain $dom --pass $pass --unix --dir --webmin  --dns --mysql --virtualmin-nginx --virtualmin-nginx-ssl
-virtualmin modify-domain --domain $dom --quota UNLIMITED
+
 uname=`echo $dom |awk -F"." '{print $1}'`
+virtualmin create-domain --domain $dom --pass $pass --unix --dir --webmin  --dns --mysql --virtualmin-nginx --virtualmin-nginx-ssl --db $uname
+virtualmin modify-domain --domain $dom --quota UNLIMITED
 curl -sS https://getcomposer.org/installer | sudo php -- --install-dir=/usr/bin --filename=composer
 su - $uname -c "mkdir -p  .config/composer"
 su - $uname -c "cat /tmp/auth.json > .config/composer/auth.json"
@@ -52,7 +61,8 @@ su - $uname -c "composer create-project --repository=https://repo.magento.com/ m
 su - $uname -c "cd public_html && find var generated vendor pub/static pub/media app/etc -type f -exec chmod g+w {} +"
 su - $uname -c "cd public_html && find var generated vendor pub/static pub/media app/etc -type d -exec chmod g+ws {} +"
 su - $uname -c "cd public_html && chmod u+x bin/magento "
-su - $uname -c "cd public_html && sed -i 's/fastcgi_backend/fastcgi_backend'$uname'/g' nginx.conf.sample "
+socket=`ls -l /var/php-fpm/ | grep -i $uname | awk '{print $9}'`
+su - $uname -c "cd public_html && sed -i 's/php-fpm:9000/unix:\/var\/php-fpm\/'$socket'/g' nginx.conf.sample "
 su - $uname -c "public_html/bin/magento  setup:install \
 --base-url=https://$dom \
 --db-host=localhost \
@@ -71,8 +81,8 @@ su - $uname -c "public_html/bin/magento  setup:install \
 --use-rewrites=1
 "
 su - $uname -c "public_html/bin/magento deploy:mode:set developer"
-socket=`ls -l /var/php-fpm/ | grep -i $uname | awk '{print $9}'`
-sed -i '84i upstream fastcgi_backend'$uname' {server  unix:/var/php-fpm/'$socket';}' /etc/nginx/nginx.conf
+#socket=`ls -l /var/php-fpm/ | grep -i $uname | awk '{print $9}'`
+#sed -i '84i upstream fastcgi_backend'$uname' {server  unix:/var/php-fpm/'$socket';}' /etc/nginx/nginx.conf
 line=`grep -n "root /home/$uname/public_html" /etc/nginx/nginx.conf  | head -n1 |awk -F ":" '{print $1}'`
 num=2
 sum=$(($num + $line))
